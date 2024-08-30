@@ -11,7 +11,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	. "github.com/khouwdevin/uploadthing-go/types"
 )
+
+// basic types
 
 type UTApi struct {
 	config *UTApiConfig
@@ -21,56 +25,6 @@ type UTApi struct {
 type UTApiConfig struct {
 	secret  string
 	baseUrl string
-}
-
-type FileKeys struct {
-	FileKeys []string `json:"fileKeys"`
-}
-
-type ListFilesType struct {
-	Id       string `json:"id"`
-	Key      string `json:"key"`
-	Name     string `json:"name"`
-	CustomId string `json:"customId"`
-	Status   string `json:"status"`
-}
-
-type ListFilesRequest struct {
-	HasMore bool            `json:"hasMore"`
-	Files   []ListFilesType `json:"files"`
-}
-
-type UsageInfo struct {
-	TotalBytes    int `json:"totalBytes"`
-	AppTotalBytes int `json:"appTotalBytes"`
-	FilesUploaded int `json:"filesUploaded"`
-	LimitBytes    int `json:"limitBytes"`
-}
-
-type UploadFilesType struct {
-	Files              []FileForUpload `json:"files"`
-	Acl                string          `json:"acl"`
-	ContentDisposition string          `json:"contentDisposition"`
-}
-
-type FileForUpload struct {
-	Name string `json:"name"`
-	Size int64  `json:"size"`
-	Type string `json:"type"`
-}
-
-type UploadInfo struct {
-	URL                string            `json:"url"`
-	Fields             map[string]string `json:"fields"`
-	Key                string            `json:"key"`
-	ContentDisposition string            `json:"contentDisposition"`
-	FileUrl            string            `json:"fileUrl"`
-	AppUrl             string            `json:"appUrl"`
-	FileName           string            `json:"fileName"`
-	PollingUrl         string            `json:"pollingUrl"`
-	PollingJwt         string            `json:"pollingJwt"`
-	FileType           string            `json:"fileType"`
-	CustomId           interface{}       `json:"customId"`
 }
 
 // create new utapi instance
@@ -154,39 +108,42 @@ func (utapi *UTApi) uploadFiles(files *[]multipart.FileHeader) (string, error) {
 		for key, value := range uploadInfo.Fields {
 			writer.WriteField(key, value)
 		}
-		writer.CreateFormFile("file", fileArr[index].Name)
+		part, err := writer.CreateFormFile("file", fileArr[index].Name)
 
-		part, err := writer.CreateFormFile("file", "your_file.txt")
 		if err != nil {
-			fmt.Println("Error creating form file:", err)
+			return "error create form file", err
 		}
 
-		file, err := os.Open(files[index])
+		file, err := os.Open(fileArr[index].Name)
 		if err != nil {
-			fmt.Println("Error opening file:", err)
+			return "error open file", err
 		}
 		defer file.Close()
 
-		_, err = io.Copy(part, files[index])
+		_, err = io.Copy(part, file)
 		if err != nil {
-			fmt.Println("Error writing file to form data:", err)
+			return "error copy file", err
 		}
 
 		err = writer.Close()
 		if err != nil {
-			fmt.Println("Error closing multipart writer:", err)
+			return "error close multipart", err
 		}
 
 		req, err := http.NewRequest("POST", utapi.config.baseUrl+uploadInfo.URL, multipartBody)
 		if err != nil {
-			fmt.Println("Error creating HTTP request:", err)
+			return "error create request", err
 		}
 
-		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Content-Type", "application/xml")
 
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
-			fmt.Println("Error sending HTTP request:", err)
+			return "error do http client", err
+		}
+
+		if res.StatusCode != 200 {
+			return "error has occured " + strconv.Itoa(res.StatusCode), err
 		}
 
 		defer res.Body.Close()
