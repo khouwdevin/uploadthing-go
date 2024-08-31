@@ -131,12 +131,12 @@ func (utapi *UTApi) uploadFiles(files *[]multipart.FileHeader) ([]types.File, er
 			return []types.File{}, err
 		}
 
-		req, err := http.NewRequest("POST", utapi.config.baseUrl+uploadInfos[index].URL, multipartBody)
+		req, err := http.NewRequest(http.MethodPost, utapi.config.baseUrl+uploadInfos[index].URL, multipartBody)
 		if err != nil {
 			return []types.File{}, err
 		}
 
-		req.Header.Set("Content-Type", "application/xml")
+		req.Header.Set("Accept", "application/xml")
 
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -147,7 +147,7 @@ func (utapi *UTApi) uploadFiles(files *[]multipart.FileHeader) ([]types.File, er
 			return []types.File{}, errors.New("error has occured " + strconv.Itoa(res.StatusCode))
 		}
 
-		res.Body.Close()
+		defer res.Body.Close()
 
 		fileInfos = append(fileInfos, types.File{
 			FileName: uploadInfos[index].FileName,
@@ -279,6 +279,12 @@ func (utapi *UTApi) getUsageInfo() (types.UsageInfo, error) {
 	}
 
 	return usageInfo, err
+}
+
+// renameFile
+
+func (utapi *UTApi) renameFile(key string, newName string) (string, error) {
+	return "hello", nil
 }
 
 func main() {
