@@ -8,11 +8,10 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
-	. "github.com/khouwdevin/uploadthing-go/types"
+	"github.com/khouwdevin/uploadthing-go/types"
 )
 
 // basic types
@@ -51,21 +50,21 @@ func (utapi *UTApi) checkAvailability() error {
 
 // uploadFiles
 
-func (utapi *UTApi) uploadFiles(files *[]multipart.FileHeader) (string, error) {
-	var fileArr []FileForUpload
+func (utapi *UTApi) uploadFiles(files *[]multipart.FileHeader) ([]types.File, error) {
+	var fileArr []types.FileForUpload
 
 	for _, file := range *files {
 		name := file.Filename
 		size := file.Size
 		fileType := file.Header["Content-Type"][0]
 
-		fileArr = append(fileArr, FileForUpload{name, size, fileType})
+		fileArr = append(fileArr, types.FileForUpload{Name: name, Size: size, Type: fileType})
 	}
 
-	fileMarshal, err := json.Marshal(UploadFilesType{fileArr, "public-read", "inline"})
+	fileMarshal, err := json.Marshal(types.UploadFilesType{Files: fileArr, Acl: "public-read", ContentDisposition: "inline"})
 
 	if err != nil {
-		return "error", err
+		return []types.File{}, err
 	}
 
 	payload := bytes.NewBuffer(fileMarshal)
@@ -78,90 +77,94 @@ func (utapi *UTApi) uploadFiles(files *[]multipart.FileHeader) (string, error) {
 	res, err := http.DefaultClient.Do(req)
 
 	if err != nil {
-		return "error", err
+		return []types.File{}, err
 	}
 
 	if res.StatusCode != 200 {
-		return "error", errors.New("error has occured " + strconv.Itoa(res.StatusCode))
+		return []types.File{}, errors.New("error has occured " + strconv.Itoa(res.StatusCode))
 	}
 
 	defer res.Body.Close()
 
-	var uploadInfos []UploadInfo
+	var uploadInfos []types.UploadInfo
 
 	body, err := io.ReadAll(res.Body)
 
 	if err != nil {
-		return "error", err
+		return []types.File{}, err
 	}
 
 	err = json.Unmarshal(body, &uploadInfos)
 
 	if err != nil {
-		return "error", err
+		return []types.File{}, err
 	}
 
 	multipartBody := &bytes.Buffer{}
 	writer := multipart.NewWriter(multipartBody)
 
-	for index, uploadInfo := range uploadInfos {
-		for key, value := range uploadInfo.Fields {
+	var fileInfos []types.File
+
+	for index, file := range *files {
+		for key, value := range uploadInfos[index].Fields {
 			writer.WriteField(key, value)
 		}
-		part, err := writer.CreateFormFile("file", fileArr[index].Name)
+		part, err := writer.CreateFormFile("file", file.Filename)
 
 		if err != nil {
-			return "error create form file", err
+			return []types.File{}, err
 		}
 
-		file, err := os.Open(fileArr[index].Name)
+		fileTmp, err := file.Open()
 		if err != nil {
-			return "error open file", err
+			return []types.File{}, err
 		}
-		defer file.Close()
+		defer fileTmp.Close()
 
-		_, err = io.Copy(part, file)
+		_, err = io.Copy(part, fileTmp)
 		if err != nil {
-			return "error copy file", err
+			return []types.File{}, err
 		}
 
 		err = writer.Close()
 		if err != nil {
-			return "error close multipart", err
+			return []types.File{}, err
 		}
 
-		req, err := http.NewRequest("POST", utapi.config.baseUrl+uploadInfo.URL, multipartBody)
+		req, err := http.NewRequest("POST", utapi.config.baseUrl+uploadInfos[index].URL, multipartBody)
 		if err != nil {
-			return "error create request", err
+			return []types.File{}, err
 		}
 
 		req.Header.Set("Content-Type", "application/xml")
 
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
-			return "error do http client", err
+			return []types.File{}, err
 		}
 
 		if res.StatusCode != 200 {
-			return "error has occured " + strconv.Itoa(res.StatusCode), err
+			return []types.File{}, errors.New("error has occured " + strconv.Itoa(res.StatusCode))
 		}
 
-		defer res.Body.Close()
+		res.Body.Close()
 
-		fmt.Println("Response status:", res.StatusCode)
+		fileInfos = append(fileInfos, types.File{
+			FileName: uploadInfos[index].FileName,
+			FileType: uploadInfos[index].FileType, FileUrl: uploadInfos[index].FileType})
 	}
 
-	return "hello", nil
+	return fileInfos, nil
 }
 
 // listFiles
 
-func (utapi *UTApi) listFiles() ([]ListFilesType, error) {
-	var filelistRequest ListFilesRequest
+func (utapi *UTApi) listFiles() ([]types.ListFilesType, error) {
+	var filelistRequest types.ListFilesRequest
 	err := utapi.checkAvailability()
 
 	if err != nil {
-		return []ListFilesType{}, err
+		return []types.ListFilesType{}, err
 	}
 
 	payload := strings.NewReader("{}")
@@ -173,11 +176,11 @@ func (utapi *UTApi) listFiles() ([]ListFilesType, error) {
 	res, err := http.DefaultClient.Do(req)
 
 	if err != nil {
-		return []ListFilesType{}, err
+		return []types.ListFilesType{}, err
 	}
 
 	if res.StatusCode != 200 {
-		return []ListFilesType{}, errors.New("error has occured " + strconv.Itoa(res.StatusCode))
+		return []types.ListFilesType{}, errors.New("error has occured " + strconv.Itoa(res.StatusCode))
 	}
 
 	defer res.Body.Close()
@@ -185,13 +188,13 @@ func (utapi *UTApi) listFiles() ([]ListFilesType, error) {
 	body, err := io.ReadAll(res.Body)
 
 	if err != nil {
-		return []ListFilesType{}, err
+		return []types.ListFilesType{}, err
 	}
 
 	err = json.Unmarshal([]byte(body), &filelistRequest)
 
 	if err != nil {
-		return []ListFilesType{}, err
+		return []types.ListFilesType{}, err
 	}
 
 	return filelistRequest.Files, nil
@@ -206,7 +209,7 @@ func (utapi *UTApi) deleteFiles(files []string) error {
 		return err
 	}
 
-	keyArr, err := json.Marshal(FileKeys{FileKeys: files})
+	keyArr, err := json.Marshal(types.FileKeys{FileKeys: files})
 
 	if err != nil {
 		return err
@@ -236,12 +239,12 @@ func (utapi *UTApi) deleteFiles(files []string) error {
 
 // getUsageInfo
 
-func (utapi *UTApi) getUsageInfo() (UsageInfo, error) {
-	var usageInfo UsageInfo
+func (utapi *UTApi) getUsageInfo() (types.UsageInfo, error) {
+	var usageInfo types.UsageInfo
 	err := utapi.checkAvailability()
 
 	if err != nil {
-		return UsageInfo{}, err
+		return types.UsageInfo{}, err
 	}
 
 	payload := strings.NewReader("{}")
@@ -254,11 +257,11 @@ func (utapi *UTApi) getUsageInfo() (UsageInfo, error) {
 	res, err := http.DefaultClient.Do(req)
 
 	if err != nil {
-		return UsageInfo{}, err
+		return types.UsageInfo{}, err
 	}
 
 	if res.StatusCode != 200 {
-		return UsageInfo{}, errors.New("error has occured " + strconv.Itoa(res.StatusCode))
+		return types.UsageInfo{}, errors.New("error has occured " + strconv.Itoa(res.StatusCode))
 	}
 
 	defer res.Body.Close()
@@ -266,13 +269,13 @@ func (utapi *UTApi) getUsageInfo() (UsageInfo, error) {
 	body, err := io.ReadAll(res.Body)
 
 	if err != nil {
-		return UsageInfo{}, err
+		return types.UsageInfo{}, err
 	}
 
 	err = json.Unmarshal(body, &usageInfo)
 
 	if err != nil {
-		return UsageInfo{}, err
+		return types.UsageInfo{}, err
 	}
 
 	return usageInfo, err

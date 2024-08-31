@@ -1,5 +1,11 @@
 package types
 
+type File struct {
+	FileName string `json:"fileName"`
+	FileType string `json:"fileType"`
+	FileUrl  string `json:"fileUrl"`
+}
+
 type FileKeys struct {
 	FileKeys []string `json:"fileKeys"`
 }
